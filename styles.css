@@ -1,0 +1,133 @@
+/* TeamSpirit Info Display - Injected Styles */
+
+#ts-info-display {
+  display: inline-block;
+  vertical-align: top;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-left: 20px;
+  min-width: 280px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#ts-info-display .info-header {
+  font-weight: bold;
+  font-size: 14px;
+  color: #1a73e8;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #1a73e8;
+}
+
+#ts-info-display .info-section {
+  margin-bottom: 10px;
+}
+
+#ts-info-display .info-section:last-child {
+  margin-bottom: 0;
+}
+
+#ts-info-display .info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+#ts-info-display .info-label {
+  color: #5f6368;
+  font-size: 12px;
+}
+
+#ts-info-display .info-value {
+  font-weight: 600;
+  color: #202124;
+  font-size: 13px;
+}
+
+#ts-info-display .info-value.large {
+  font-size: 18px;
+  color: #1a73e8;
+}
+
+#ts-info-display .info-value.positive {
+  color: #0d904f;
+}
+
+#ts-info-display .info-value.negative {
+  color: #d93025;
+}
+
+#ts-info-display .info-value.highlight {
+  color: #ea8600;
+  font-weight: bold;
+}
+
+#ts-info-display .info-divider {
+  height: 1px;
+  background: #dadce0;
+  margin: 8px 0;
+}
+
+#ts-info-display .status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#ts-info-display .status-badge.working {
+  background: #e6f4ea;
+  color: #137333;
+}
+
+#ts-info-display .status-badge.finished {
+  background: #e8f0fe;
+  color: #1967d2;
+}
+
+#ts-info-display .status-badge.not-started {
+  background: #fce8e6;
+  color: #c5221f;
+}
+
+#ts-info-display .loading {
+  color: #5f6368;
+  font-style: italic;
+}
+
+#ts-info-display .summary-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#ts-info-display .summary-toggle:hover {
+  color: #1a73e8;
+}
+
+#ts-info-display .summary-toggle .toggle-icon {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+#ts-info-display .summary-toggle.collapsed .toggle-icon {
+  transform: rotate(-90deg);
+}
+
+#ts-info-display .summary-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  max-height: 200px;
+}
+
+#ts-info-display .summary-content.collapsed {
+  max-height: 0;
+}
