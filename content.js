@@ -1,25 +1,15 @@
 // TeamSpirit Info Display - Content Script
 // Injects working time and summary info into TeamSpirit home page
-// Reads data directly from the page DOM (same logic as TeamSpirit Quick Punch)
+// Reads data from iframe DOM and displays in main frame
 
 (function() {
   'use strict';
 
-  // Only run in main frame
-  if (window !== window.top) return;
-
-  // Avoid running multiple times
+  // Avoid running multiple times in same frame
   if (window.tsInfoDisplayInitialized) return;
   window.tsInfoDisplayInitialized = true;
 
-  // Configuration
-  const CHECK_INTERVAL = 2000;
-  const UPDATE_INTERVAL = 1000;
-  const MAX_RETRIES = 30;
-
-  let infoPanel = null;
-  let updateTimer = null;
-  let retryCount = 0;
+  const isMainFrame = (window === window.top);
 
   // ==================== Utility Functions ====================
 
@@ -88,7 +78,8 @@
       clockOutTime: null,
       isWorking: false,
       hasClockedOut: false,
-      summary: null
+      summary: null,
+      found: false
     };
 
     // 1. Look for clock-in time with ID ttvTimeSt{date}
@@ -96,6 +87,7 @@
     const clockInEl = document.getElementById(clockInId);
 
     if (clockInEl) {
+      result.found = true;
       const timeText = clockInEl.textContent?.trim();
       if (timeText && timeText !== '' && timeText !== '--:--') {
         result.clockInTime = timeText;
@@ -173,10 +165,58 @@
 
     if (Object.keys(summaryData).length > 0) {
       result.summary = summaryData;
+      result.found = true;
     }
 
     return result;
   }
+
+  // ==================== IFRAME: Send data to parent ====================
+
+  if (!isMainFrame) {
+    // In iframe: search for data and send to parent
+    let lastDataJson = '';
+
+    function checkAndSendData() {
+      const data = getAttendanceDataFromPage();
+      if (data.found) {
+        const dataJson = JSON.stringify(data);
+        // Only send if data changed
+        if (dataJson !== lastDataJson) {
+          lastDataJson = dataJson;
+          window.top.postMessage({
+            type: 'TS_INFO_DISPLAY_DATA',
+            data: data
+          }, '*');
+        }
+      }
+    }
+
+    // Check immediately and periodically
+    checkAndSendData();
+    setInterval(checkAndSendData, 1000);
+
+    return; // Don't continue with UI code in iframe
+  }
+
+  // ==================== MAIN FRAME: Display panel ====================
+
+  // Configuration
+  const CHECK_INTERVAL = 2000;
+  const MAX_RETRIES = 30;
+
+  let infoPanel = null;
+  let updateTimer = null;
+  let retryCount = 0;
+  let latestData = null;
+
+  // Listen for data from iframes
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'TS_INFO_DISPLAY_DATA') {
+      latestData = event.data.data;
+      updateDisplay();
+    }
+  });
 
   // ==================== UI Creation ====================
 
@@ -260,8 +300,7 @@
   function updateDisplay() {
     if (!infoPanel) return;
 
-    // Get data directly from page DOM
-    const data = getAttendanceDataFromPage();
+    const data = latestData;
 
     const statusBadge = infoPanel.querySelector('#ts-status-badge');
     const timeSection = infoPanel.querySelector('#ts-time-section');
@@ -273,6 +312,12 @@
     const targetTimeEl = infoPanel.querySelector('#ts-target-time');
     const divider = infoPanel.querySelector('#ts-divider');
     const summarySection = infoPanel.querySelector('#ts-summary-section');
+
+    if (!data) {
+      statusBadge.textContent = '確認中...';
+      statusBadge.className = 'status-badge not-started';
+      return;
+    }
 
     // Update status based on data
     if (data.isWorking && data.clockInTime) {
@@ -393,6 +438,20 @@
     }
   }
 
+  // Update working time every second (for real-time counter)
+  function startWorkingTimeUpdates() {
+    setInterval(() => {
+      if (latestData?.isWorking && latestData?.clockInTime && infoPanel) {
+        const workingTimeEl = infoPanel.querySelector('#ts-working-time');
+        const clockInDate = parseTimeToDate(latestData.clockInTime);
+        if (clockInDate && workingTimeEl) {
+          const workingMs = Date.now() - clockInDate.getTime();
+          workingTimeEl.textContent = formatDuration(workingMs);
+        }
+      }
+    }, 1000);
+  }
+
   // ==================== Panel Injection ====================
 
   function findAndInjectPanel() {
@@ -409,17 +468,6 @@
     for (const selector of punchAreaSelectors) {
       punchArea = document.querySelector(selector);
       if (punchArea) break;
-    }
-
-    // Alternative: look for the time display element
-    if (!punchArea) {
-      const dateStr = getTodayDateStr();
-      const timeDisplay = document.getElementById(`ttvTimeSt${dateStr}`);
-      if (timeDisplay) {
-        punchArea = timeDisplay.closest('table')?.closest('div') ||
-                   timeDisplay.closest('.slds-card') ||
-                   timeDisplay.closest('[class*="container"]');
-      }
     }
 
     if (!punchArea) {
@@ -446,8 +494,8 @@
     // Initial update
     updateDisplay();
 
-    // Start periodic updates
-    updateTimer = setInterval(updateDisplay, UPDATE_INTERVAL);
+    // Start working time updates
+    startWorkingTimeUpdates();
 
     console.log('TeamSpirit Info Display: Panel injected successfully');
   }
@@ -474,10 +522,7 @@
     if (url !== lastUrl) {
       lastUrl = url;
       retryCount = 0;
-      if (updateTimer) {
-        clearInterval(updateTimer);
-        updateTimer = null;
-      }
+      latestData = null;
       infoPanel = null;
       setTimeout(findAndInjectPanel, 1000);
     }
