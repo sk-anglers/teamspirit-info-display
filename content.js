@@ -1,29 +1,29 @@
 // TeamSpirit Info Display - Content Script
 // Injects working time and summary info into TeamSpirit home page
+// Reads data from chrome.storage.local (shared with TeamSpirit Quick Punch extension)
 
 (function() {
   'use strict';
+
+  // Only run in main frame
+  if (window !== window.top) return;
 
   // Avoid running multiple times
   if (window.tsInfoDisplayInitialized) return;
   window.tsInfoDisplayInitialized = true;
 
   // Configuration
-  const CHECK_INTERVAL = 2000; // Check for punch area every 2 seconds
-  const UPDATE_INTERVAL = 1000; // Update time display every 1 second
-  const MAX_RETRIES = 30; // Max retries to find punch area
+  const CHECK_INTERVAL = 2000;
+  const UPDATE_INTERVAL = 1000;
+  const MAX_RETRIES = 30;
 
   let infoPanel = null;
   let updateTimer = null;
   let retryCount = 0;
+  let cachedData = null;
 
-  // Get today's date string in YYYY-MM-DD format
-  function getTodayDateStr() {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  }
+  // ==================== Utility Functions ====================
 
-  // Format time as HH:MM:SS
   function formatDuration(ms) {
     if (!ms || ms < 0) return '--:--:--';
     const totalSeconds = Math.floor(ms / 1000);
@@ -33,7 +33,6 @@
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  // Format time as HH:MM
   function formatTimeShort(date) {
     if (!date) return '--:--';
     const h = String(date.getHours()).padStart(2, '0');
@@ -41,7 +40,6 @@
     return `${h}:${m}`;
   }
 
-  // Parse time string to minutes
   function parseTimeToMinutes(timeStr) {
     if (!timeStr || timeStr === '--:--') return null;
     const isNegative = timeStr.startsWith('-');
@@ -55,7 +53,6 @@
     return isNegative ? -totalMinutes : totalMinutes;
   }
 
-  // Format minutes to time string
   function formatMinutesToTime(totalMinutes) {
     if (totalMinutes === null || totalMinutes === undefined) return '--:--';
     const isNegative = totalMinutes < 0;
@@ -66,76 +63,57 @@
     return isNegative ? `-${timeStr}` : timeStr;
   }
 
-  // Get attendance data from the page
-  function getAttendanceData() {
-    const dateStr = getTodayDateStr();
-    const data = {
-      clockInTime: null,
-      clockOutTime: null,
-      isWorking: false,
-      hasClockedOut: false,
-      summary: null
-    };
-
-    // Find clock-in time
-    const clockInId = `ttvTimeSt${dateStr}`;
-    const clockInEl = document.getElementById(clockInId);
-    if (clockInEl) {
-      const timeText = clockInEl.textContent?.trim();
-      if (timeText && timeText !== '' && timeText !== '--:--') {
-        data.clockInTime = timeText;
-      }
-    }
-
-    // Find clock-out time (in the same row as clock-in)
-    if (clockInEl) {
-      const row = clockInEl.closest('tr');
-      if (row) {
-        const clockOutEl = row.querySelector('td.vet, td.dval.vet');
-        if (clockOutEl) {
-          const timeText = clockOutEl.textContent?.trim();
-          if (timeText && timeText !== '' && timeText !== '--:--') {
-            data.clockOutTime = timeText;
-            data.hasClockedOut = true;
-          }
-        }
-      }
-    }
-
-    // Determine working status
-    data.isWorking = !!(data.clockInTime && !data.clockOutTime);
-
-    // Get summary data from storage (shared with main extension)
-    return data;
+  function isToday(timestamp) {
+    if (!timestamp) return false;
+    const date = new Date(timestamp);
+    const today = new Date();
+    return date.getFullYear() === today.getFullYear() &&
+           date.getMonth() === today.getMonth() &&
+           date.getDate() === today.getDate();
   }
 
-  // Get summary data from tables on the page
-  function getSummaryData() {
-    const summaryData = {};
+  // ==================== Data Loading ====================
 
-    // Search for specific patterns in table structure
-    const tables = document.querySelectorAll('table');
-    tables.forEach(table => {
-      const rows = table.querySelectorAll('tr');
-      rows.forEach(row => {
-        const cells = row.querySelectorAll('td, th');
-        if (cells.length >= 2) {
-          const label = cells[0].textContent?.trim();
-          const value = cells[cells.length - 1].textContent?.trim();
-
-          if (label?.includes('所定労働時間')) summaryData.scheduledHours = value;
-          if (label?.includes('総労働時間') && !label?.includes('法定')) summaryData.totalHours = value;
-          if (label?.includes('過不足時間')) summaryData.overUnderHours = value;
-          if (label?.includes('所定出勤日数')) summaryData.scheduledDays = value;
-          if (label?.includes('実出勤日数')) summaryData.actualDays = value;
+  async function loadDataFromStorage() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([
+        'clockInTimestamp',
+        'clockOutTimestamp',
+        'hasClockedOut',
+        'workSummary'
+      ], (result) => {
+        if (chrome.runtime.lastError) {
+          console.log('TeamSpirit Info Display: Storage error', chrome.runtime.lastError);
+          resolve(null);
+          return;
         }
+
+        // Check if data is from today
+        if (result.clockInTimestamp && isToday(result.clockInTimestamp)) {
+          cachedData = {
+            clockInTimestamp: result.clockInTimestamp,
+            clockOutTimestamp: result.clockOutTimestamp || null,
+            hasClockedOut: result.hasClockedOut || false,
+            isWorking: !!(result.clockInTimestamp && !result.hasClockedOut),
+            summary: result.workSummary || null
+          };
+        } else {
+          cachedData = {
+            clockInTimestamp: null,
+            clockOutTimestamp: null,
+            hasClockedOut: false,
+            isWorking: false,
+            summary: result.workSummary || null
+          };
+        }
+
+        resolve(cachedData);
       });
     });
-
-    return Object.keys(summaryData).length > 0 ? summaryData : null;
   }
 
-  // Create the info panel HTML
+  // ==================== UI Creation ====================
+
   function createInfoPanel() {
     const panel = document.createElement('div');
     panel.id = 'ts-info-display';
@@ -145,7 +123,7 @@
       <div class="info-section">
         <div class="info-row">
           <span class="info-label">状態</span>
-          <span class="status-badge not-started" id="ts-status-badge">確認中...</span>
+          <span class="status-badge not-started" id="ts-status-badge">読込中...</span>
         </div>
       </div>
 
@@ -211,25 +189,19 @@
     return panel;
   }
 
-  // Parse time string to Date object (today)
-  function parseTimeToDate(timeStr) {
-    if (!timeStr || timeStr === '--:--') return null;
-    const parts = timeStr.split(':');
-    if (parts.length < 2) return null;
-    const hours = parseInt(parts[0], 10);
-    const minutes = parseInt(parts[1], 10);
-    if (isNaN(hours) || isNaN(minutes)) return null;
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    return date;
-  }
+  // ==================== Display Update ====================
 
-  // Update the display with current data
-  function updateDisplay() {
+  async function updateDisplay() {
     if (!infoPanel) return;
 
-    const data = getAttendanceData();
-    const summary = getSummaryData();
+    // Load fresh data from storage
+    await loadDataFromStorage();
+    const data = cachedData;
+
+    if (!data) {
+      console.log('TeamSpirit Info Display: No data available');
+      return;
+    }
 
     const statusBadge = infoPanel.querySelector('#ts-status-badge');
     const timeSection = infoPanel.querySelector('#ts-time-section');
@@ -242,38 +214,39 @@
     const divider = infoPanel.querySelector('#ts-divider');
     const summarySection = infoPanel.querySelector('#ts-summary-section');
 
-    // Update status
-    if (data.isWorking) {
+    // Update status based on data
+    if (data.isWorking && data.clockInTimestamp) {
       statusBadge.textContent = '出勤中';
       statusBadge.className = 'status-badge working';
       timeSection.style.display = 'block';
       clockOutRow.style.display = 'none';
       targetRow.style.display = 'flex';
 
+      // Show clock-in time
+      const clockInDate = new Date(data.clockInTimestamp);
+      clockInEl.textContent = formatTimeShort(clockInDate);
+
       // Calculate working time
-      const clockInDate = parseTimeToDate(data.clockInTime);
-      if (clockInDate) {
-        clockInEl.textContent = data.clockInTime;
-        const workingMs = Date.now() - clockInDate.getTime();
-        workingTimeEl.textContent = formatDuration(workingMs);
-      }
-    } else if (data.hasClockedOut) {
+      const workingMs = Date.now() - data.clockInTimestamp;
+      workingTimeEl.textContent = formatDuration(workingMs);
+
+    } else if (data.hasClockedOut && data.clockInTimestamp && data.clockOutTimestamp) {
       statusBadge.textContent = '退勤済み';
       statusBadge.className = 'status-badge finished';
       timeSection.style.display = 'block';
       clockOutRow.style.display = 'flex';
       targetRow.style.display = 'none';
 
-      clockInEl.textContent = data.clockInTime;
-      clockOutEl.textContent = data.clockOutTime;
+      // Show clock-in/out times
+      const clockInDate = new Date(data.clockInTimestamp);
+      const clockOutDate = new Date(data.clockOutTimestamp);
+      clockInEl.textContent = formatTimeShort(clockInDate);
+      clockOutEl.textContent = formatTimeShort(clockOutDate);
 
       // Calculate final working time
-      const clockInDate = parseTimeToDate(data.clockInTime);
-      const clockOutDate = parseTimeToDate(data.clockOutTime);
-      if (clockInDate && clockOutDate) {
-        const workingMs = clockOutDate.getTime() - clockInDate.getTime();
-        workingTimeEl.textContent = formatDuration(workingMs);
-      }
+      const workingMs = data.clockOutTimestamp - data.clockInTimestamp;
+      workingTimeEl.textContent = formatDuration(workingMs);
+
     } else {
       statusBadge.textContent = '未出勤';
       statusBadge.className = 'status-badge not-started';
@@ -281,6 +254,7 @@
     }
 
     // Update summary
+    const summary = data.summary;
     if (summary) {
       divider.style.display = 'block';
       summarySection.style.display = 'block';
@@ -294,85 +268,72 @@
       const overUnderEl = infoPanel.querySelector('#ts-over-under');
 
       if (scheduledMinutes !== null && totalMinutes !== null) {
-        const overUnderMinutes = totalMinutes - scheduledMinutes;
+        // Add today's working time if currently working
+        let currentTotalMinutes = totalMinutes;
+        if (data.isWorking && data.clockInTimestamp) {
+          const todayWorkingMinutes = Math.floor((Date.now() - data.clockInTimestamp) / 60000);
+          currentTotalMinutes += todayWorkingMinutes;
+        }
+
+        const overUnderMinutes = currentTotalMinutes - scheduledMinutes;
         const overUnderStr = formatMinutesToTime(overUnderMinutes);
         overUnderEl.textContent = overUnderMinutes >= 0 ? `+${overUnderStr}` : overUnderStr;
         overUnderEl.className = `info-value ${overUnderMinutes >= 0 ? 'positive' : 'negative'}`;
-      }
 
-      // Calculate remaining days and required per day
-      const scheduledDays = parseInt(summary.scheduledDays, 10);
-      const actualDays = parseInt(summary.actualDays, 10);
-      const remainingDaysEl = infoPanel.querySelector('#ts-remaining-days');
-      const requiredPerDayEl = infoPanel.querySelector('#ts-required-per-day');
+        // Calculate remaining days and required per day
+        const scheduledDays = parseInt(summary.scheduledDays, 10);
+        const actualDays = parseInt(summary.actualDays, 10);
+        const remainingDaysEl = infoPanel.querySelector('#ts-remaining-days');
+        const requiredPerDayEl = infoPanel.querySelector('#ts-required-per-day');
 
-      if (!isNaN(scheduledDays) && !isNaN(actualDays)) {
-        const remainingDays = scheduledDays - actualDays;
-        remainingDaysEl.textContent = `${remainingDays}日`;
+        if (!isNaN(scheduledDays) && !isNaN(actualDays)) {
+          const remainingDays = scheduledDays - actualDays;
+          remainingDaysEl.textContent = `${remainingDays}日`;
 
-        if (remainingDays > 0 && scheduledMinutes !== null && totalMinutes !== null) {
-          // Add today's working time if currently working
-          let currentTotalMinutes = totalMinutes;
-          if (data.isWorking) {
-            const clockInDate = parseTimeToDate(data.clockInTime);
-            if (clockInDate) {
-              const todayWorkingMinutes = Math.floor((Date.now() - clockInDate.getTime()) / 60000);
-              currentTotalMinutes += todayWorkingMinutes;
-            }
-          }
+          if (remainingDays > 0) {
+            const remainingMinutes = scheduledMinutes - currentTotalMinutes;
+            if (remainingMinutes > 0) {
+              const requiredMinutesPerDay = Math.ceil(remainingMinutes / remainingDays);
+              requiredPerDayEl.textContent = formatMinutesToTime(requiredMinutesPerDay);
+              requiredPerDayEl.className = 'info-value highlight';
 
-          const remainingMinutes = scheduledMinutes - currentTotalMinutes;
-          if (remainingMinutes > 0) {
-            const requiredMinutesPerDay = Math.ceil(remainingMinutes / remainingDays);
-            requiredPerDayEl.textContent = formatMinutesToTime(requiredMinutesPerDay);
-            requiredPerDayEl.className = 'info-value highlight';
-
-            // Calculate target clock-out time
-            if (data.isWorking) {
-              const clockInDate = parseTimeToDate(data.clockInTime);
-              if (clockInDate) {
+              // Calculate target clock-out time
+              if (data.isWorking && data.clockInTimestamp) {
                 const breakMinutes = 60; // 1 hour break
-                const targetMs = clockInDate.getTime() + (requiredMinutesPerDay + breakMinutes) * 60 * 1000;
+                const targetMs = data.clockInTimestamp + (requiredMinutesPerDay + breakMinutes) * 60 * 1000;
                 const targetDate = new Date(targetMs);
                 targetTimeEl.textContent = formatTimeShort(targetDate);
               }
+            } else {
+              requiredPerDayEl.textContent = '達成済み';
+              requiredPerDayEl.className = 'info-value positive';
+              targetTimeEl.textContent = '達成済み';
             }
-          } else {
-            requiredPerDayEl.textContent = '達成済み';
-            requiredPerDayEl.className = 'info-value positive';
-            targetTimeEl.textContent = '達成済み';
           }
         }
       }
+    } else {
+      divider.style.display = 'none';
+      summarySection.style.display = 'none';
     }
   }
 
-  // Find the punch area and inject the info panel
+  // ==================== Panel Injection ====================
+
   function findAndInjectPanel() {
     // Look for the punch area container
-    // The punch area typically contains the date/time display and punch buttons
     const punchAreaSelectors = [
       '.pw_base',
       '[class*="punch"]',
       '.empWorkArea',
-      '#empWorkArea'
+      '#empWorkArea',
+      '.slds-card'
     ];
 
     let punchArea = null;
     for (const selector of punchAreaSelectors) {
       punchArea = document.querySelector(selector);
       if (punchArea) break;
-    }
-
-    // Alternative: look for the time display element
-    if (!punchArea) {
-      const timeDisplay = document.querySelector('[id^="ttvTimeSt"]');
-      if (timeDisplay) {
-        // Find the parent container
-        punchArea = timeDisplay.closest('table')?.closest('div') ||
-                   timeDisplay.closest('.slds-card') ||
-                   timeDisplay.closest('[class*="container"]');
-      }
     }
 
     if (!punchArea) {
@@ -391,47 +352,56 @@
     // Create and inject the panel
     infoPanel = createInfoPanel();
 
-    // Try to find a good injection point
-    const parentContainer = punchArea.parentElement;
-    if (parentContainer) {
-      // Insert after the punch area
-      punchArea.style.display = 'inline-block';
-      punchArea.style.verticalAlign = 'top';
-      punchArea.insertAdjacentElement('afterend', infoPanel);
-    } else {
-      punchArea.appendChild(infoPanel);
-    }
+    // Insert after the punch area
+    punchArea.style.display = 'inline-block';
+    punchArea.style.verticalAlign = 'top';
+    punchArea.insertAdjacentElement('afterend', infoPanel);
 
-    // Start updating
+    // Initial update
     updateDisplay();
+
+    // Start periodic updates
     updateTimer = setInterval(updateDisplay, UPDATE_INTERVAL);
 
     console.log('TeamSpirit Info Display: Panel injected successfully');
   }
 
-  // Initialize
+  // ==================== Initialization ====================
+
   function init() {
-    // Wait for page to be ready
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', findAndInjectPanel);
+      document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(findAndInjectPanel, 1000);
+      });
     } else {
-      // Delay slightly to allow dynamic content to load
       setTimeout(findAndInjectPanel, 1000);
     }
   }
 
-  // Start initialization
+  // Start
   init();
 
-  // Also try on URL changes (for SPA navigation)
+  // Handle SPA navigation
   let lastUrl = location.href;
   new MutationObserver(() => {
     const url = location.href;
     if (url !== lastUrl) {
       lastUrl = url;
       retryCount = 0;
+      if (updateTimer) {
+        clearInterval(updateTimer);
+        updateTimer = null;
+      }
+      infoPanel = null;
       setTimeout(findAndInjectPanel, 1000);
     }
   }).observe(document, { subtree: true, childList: true });
+
+  // Listen for storage changes
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local') {
+      updateDisplay();
+    }
+  });
 
 })();
