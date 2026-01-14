@@ -1,13 +1,20 @@
 {
   "manifest_version": 3,
   "name": "TeamSpirit Info Display",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "TeamSpiritのホーム画面に勤怠情報を表示する拡張機能",
-  "permissions": [],
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
   "host_permissions": [
     "https://teamspirit-74532.lightning.force.com/*",
     "https://*.force.com/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -16,8 +23,7 @@
       ],
       "js": ["content.js"],
       "css": ["styles.css"],
-      "run_at": "document_idle",
-      "all_frames": true
+      "run_at": "document_idle"
     }
   ],
   "icons": {
