@@ -153,15 +153,25 @@
   async function requestDataFetch() {
     log('backgroundにデータ取得リクエスト送信中...');
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: 'FETCH_ATTENDANCE_DATA' }, (response) => {
-        if (chrome.runtime.lastError) {
-          log('メッセージエラー:', chrome.runtime.lastError);
+      try {
+        if (!chrome.runtime?.id) {
+          log('拡張機能コンテキストが無効です。ページをリロードしてください。');
           resolve(null);
           return;
         }
-        log('backgroundからのレスポンス:', response);
-        resolve(response?.data || null);
-      });
+        chrome.runtime.sendMessage({ type: 'FETCH_ATTENDANCE_DATA' }, (response) => {
+          if (chrome.runtime.lastError) {
+            log('メッセージエラー:', chrome.runtime.lastError.message);
+            resolve(null);
+            return;
+          }
+          log('backgroundからのレスポンス:', response);
+          resolve(response?.data || null);
+        });
+      } catch (e) {
+        log('sendMessageエラー:', e.message);
+        resolve(null);
+      }
     });
   }
 
