@@ -447,9 +447,14 @@
 
     log('パネルを作成・挿入中...');
     infoPanel = createInfoPanel();
-    punchArea.style.display = 'inline-block';
-    punchArea.style.verticalAlign = 'top';
-    punchArea.insertAdjacentElement('afterend', infoPanel);
+
+    // ラッパーを作成して横並びにする
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display: flex; align-items: flex-start; gap: 20px;';
+    punchArea.parentNode.insertBefore(wrapper, punchArea);
+    wrapper.appendChild(punchArea);
+    wrapper.appendChild(infoPanel);
+
     log('パネル挿入完了');
 
     // Load and display data
