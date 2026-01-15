@@ -454,14 +454,28 @@
     log('パネルを作成・挿入中...');
     infoPanel = createInfoPanel();
 
-    // パネルを固定位置で配置（既存レイアウトを壊さない）
-    infoPanel.style.position = 'fixed';
-    infoPanel.style.top = '120px';
-    infoPanel.style.left = '340px';
-    infoPanel.style.zIndex = '10000';
-    document.body.appendChild(infoPanel);
+    // 打刻エリアの右隣に配置（絶対位置）
+    infoPanel.style.position = 'absolute';
+    infoPanel.style.zIndex = '1000';
 
-    log('パネル挿入完了');
+    // 打刻エリアの位置を取得して右に配置
+    const rect = punchArea.getBoundingClientRect();
+    const parentRect = punchArea.offsetParent?.getBoundingClientRect() || { left: 0, top: 0 };
+    infoPanel.style.left = (rect.right - parentRect.left + 20) + 'px';
+    infoPanel.style.top = (rect.top - parentRect.top) + 'px';
+
+    // 親要素にposition: relativeがなければ設定
+    if (punchArea.offsetParent) {
+      const parentPos = getComputedStyle(punchArea.offsetParent).position;
+      if (parentPos === 'static') {
+        punchArea.offsetParent.style.position = 'relative';
+      }
+      punchArea.offsetParent.appendChild(infoPanel);
+    } else {
+      document.body.appendChild(infoPanel);
+    }
+
+    log('パネル挿入完了 - 位置: left=' + infoPanel.style.left + ', top=' + infoPanel.style.top);
 
     // Load and display data
     log('初期データ読み込み開始...');
