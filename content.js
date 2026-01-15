@@ -58,6 +58,12 @@
     return;
   }
 
+  // 勤怠ページでは実行しない（無限ループ防止）
+  if (window.location.href.includes('AtkWorkTimeTab')) {
+    log('勤怠ページのため終了（データ取得用ページ）');
+    return;
+  }
+
   // Avoid running multiple times
   if (window.tsInfoDisplayInitialized) {
     log('既に初期化済みのため終了');
