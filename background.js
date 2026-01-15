@@ -1,7 +1,7 @@
 // TeamSpirit Info Display - Background Script
 // Fetches attendance data from TeamSpirit attendance page
 
-const TEAMSPIRIT_ATTENDANCE_URL = 'https://teamspirit-74532.lightning.force.com/lightning/n/teamspirit__AtkWorkTimeView';
+const TEAMSPIRIT_ATTENDANCE_URL = 'https://teamspirit-74532.lightning.force.com/lightning/n/teamspirit__AtkWorkTimeTab';
 
 // ログをContent Scriptに送信してUI表示
 async function sendLogToContent(message, data = null) {
