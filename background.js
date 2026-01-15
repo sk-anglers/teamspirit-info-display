@@ -58,10 +58,29 @@ async function fetchAttendanceData() {
     await waitForTabLoad(tempTab.id);
     log('STEP 2 完了: ページ読み込み完了');
 
-    // Additional wait for dynamic content
-    log('STEP 3: 動的コンテンツ待機中 (5秒)...');
-    await new Promise(r => setTimeout(r, 5000));
+    // Additional wait for dynamic content - Salesforce Lightning needs more time
+    log('STEP 3: 動的コンテンツ待機中 (8秒)...');
+    await new Promise(r => setTimeout(r, 8000));
     log('STEP 3 完了: 待機完了');
+
+    // Check for iframes and wait for them to load
+    log('STEP 3.5: iframe検出中...');
+    const iframeCheck = await chrome.scripting.executeScript({
+      target: { tabId: tempTab.id },
+      func: () => {
+        const iframes = document.querySelectorAll('iframe');
+        return {
+          count: iframes.length,
+          srcs: Array.from(iframes).map(f => f.src || '(no src)').slice(0, 5)
+        };
+      }
+    });
+    log('iframe検出結果:', iframeCheck[0]?.result);
+
+    if (iframeCheck[0]?.result?.count > 0) {
+      log('iframeが見つかりました。追加で3秒待機...');
+      await new Promise(r => setTimeout(r, 3000));
+    }
 
     const dateStr = getTodayDateStr();
     log('検索対象日付: ' + dateStr);
@@ -93,6 +112,10 @@ async function fetchAttendanceData() {
           const clockInEl = document.getElementById(clockInId);
 
           result.debug.clockInElementFound = !!clockInEl;
+
+          // 全てのttvで始まるIDを検索
+          const allTtvIds = Array.from(document.querySelectorAll('[id^="ttv"]')).map(el => el.id).slice(0, 10);
+          result.debug.ttvIdsFound = allTtvIds;
 
           if (clockInEl) {
             const timeText = clockInEl.textContent?.trim();
@@ -189,6 +212,7 @@ async function fetchAttendanceData() {
         log(`  勤務中: ${r.result.isWorking}`);
         log(`  テーブル数: ${r.result.debug?.tableCount}`);
         log(`  サマリーキー: ${r.result.debug?.summaryKeysFound?.join(', ') || 'なし'}`);
+        log(`  ttv要素: ${r.result.debug?.ttvIdsFound?.join(', ') || 'なし'}`);
         if (r.result.debug?.error) {
           log(`  エラー: ${r.result.debug.error}`);
         }
