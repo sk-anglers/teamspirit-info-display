@@ -4,12 +4,32 @@
 (function() {
   'use strict';
 
+  function log(message, data = null) {
+    const timestamp = new Date().toLocaleTimeString();
+    if (data !== null) {
+      console.log(`[TS-Info-Content ${timestamp}] ${message}`, data);
+    } else {
+      console.log(`[TS-Info-Content ${timestamp}] ${message}`);
+    }
+  }
+
+  log('Content script 開始');
+  log('現在のURL: ' + window.location.href);
+  log('メインフレーム: ' + (window === window.top));
+
   // Only run in main frame
-  if (window !== window.top) return;
+  if (window !== window.top) {
+    log('メインフレームではないため終了');
+    return;
+  }
 
   // Avoid running multiple times
-  if (window.tsInfoDisplayInitialized) return;
+  if (window.tsInfoDisplayInitialized) {
+    log('既に初期化済みのため終了');
+    return;
+  }
   window.tsInfoDisplayInitialized = true;
+  log('初期化フラグ設定完了');
 
   // Configuration
   const CHECK_INTERVAL = 2000;
@@ -76,12 +96,19 @@
   // ==================== Data Loading ====================
 
   async function loadDataFromStorage() {
+    log('ストレージからデータ読み込み中...');
     return new Promise((resolve) => {
       chrome.storage.local.get(['attendanceData', 'lastFetched'], (result) => {
         if (chrome.runtime.lastError) {
-          console.log('TeamSpirit Info Display: Storage error', chrome.runtime.lastError);
+          log('ストレージエラー:', chrome.runtime.lastError);
           resolve(null);
           return;
+        }
+        log('ストレージ結果:', result);
+        if (result.attendanceData) {
+          log('キャッシュデータ発見 (lastFetched: ' + new Date(result.lastFetched).toLocaleString() + ')');
+        } else {
+          log('キャッシュデータなし');
         }
         resolve(result.attendanceData || null);
       });
@@ -89,28 +116,35 @@
   }
 
   async function requestDataFetch() {
+    log('backgroundにデータ取得リクエスト送信中...');
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: 'FETCH_ATTENDANCE_DATA' }, (response) => {
         if (chrome.runtime.lastError) {
-          console.log('TeamSpirit Info Display: Message error', chrome.runtime.lastError);
+          log('メッセージエラー:', chrome.runtime.lastError);
           resolve(null);
           return;
         }
+        log('backgroundからのレスポンス:', response);
         resolve(response?.data || null);
       });
     });
   }
 
   async function loadData() {
+    log('===== データ読み込み開始 =====');
+
     // First try to load from storage
     let data = await loadDataFromStorage();
 
     // If no data, request fetch from background
     if (!data) {
+      log('キャッシュなし - backgroundに取得リクエスト');
       data = await requestDataFetch();
     }
 
     cachedData = data;
+    log('最終データ:', data);
+    log('===== データ読み込み完了 =====');
     return data;
   }
 
@@ -330,6 +364,8 @@
   // ==================== Panel Injection ====================
 
   function findAndInjectPanel() {
+    log('パネル挿入位置を検索中... (試行 ' + (retryCount + 1) + '/' + MAX_RETRIES + ')');
+
     const punchAreaSelectors = [
       '.pw_base',
       '[class*="punch"]',
@@ -340,29 +376,41 @@
 
     let punchArea = null;
     for (const selector of punchAreaSelectors) {
-      punchArea = document.querySelector(selector);
-      if (punchArea) break;
+      const el = document.querySelector(selector);
+      if (el) {
+        log('セレクタ "' + selector + '" で要素発見');
+        punchArea = el;
+        break;
+      }
     }
 
     if (!punchArea) {
       retryCount++;
+      log('パネル挿入位置が見つかりません (リトライ ' + retryCount + '/' + MAX_RETRIES + ')');
       if (retryCount < MAX_RETRIES) {
         setTimeout(findAndInjectPanel, CHECK_INTERVAL);
+      } else {
+        log('最大リトライ回数に達しました - パネル挿入を断念');
       }
       return;
     }
 
     if (document.getElementById('ts-info-display')) {
+      log('パネルは既に存在します');
       return;
     }
 
+    log('パネルを作成・挿入中...');
     infoPanel = createInfoPanel();
     punchArea.style.display = 'inline-block';
     punchArea.style.verticalAlign = 'top';
     punchArea.insertAdjacentElement('afterend', infoPanel);
+    log('パネル挿入完了');
 
     // Load and display data
+    log('初期データ読み込み開始...');
     loadData().then(() => {
+      log('初期データ読み込み完了 - 表示更新');
       updateDisplay();
     });
 
@@ -380,25 +428,33 @@
 
     // Refresh data periodically
     setInterval(() => {
+      log('定期データ更新開始...');
       requestDataFetch().then(data => {
         if (data) {
+          log('定期データ更新完了');
           cachedData = data;
           updateDisplay();
+        } else {
+          log('定期データ更新: データなし');
         }
       });
     }, DATA_REFRESH_INTERVAL);
 
-    console.log('TeamSpirit Info Display: Panel injected successfully');
+    log('===== パネル初期化完了 =====');
   }
 
   // ==================== Initialization ====================
 
   function init() {
+    log('init() 開始 - readyState: ' + document.readyState);
     if (document.readyState === 'loading') {
+      log('DOMContentLoaded待機中...');
       document.addEventListener('DOMContentLoaded', () => {
+        log('DOMContentLoaded発火 - 1秒後にパネル挿入開始');
         setTimeout(findAndInjectPanel, 1000);
       });
     } else {
+      log('DOM準備完了 - 1秒後にパネル挿入開始');
       setTimeout(findAndInjectPanel, 1000);
     }
   }
@@ -406,10 +462,12 @@
   init();
 
   // Handle SPA navigation
+  log('SPA ナビゲーション監視を設定中...');
   let lastUrl = location.href;
   new MutationObserver(() => {
     const url = location.href;
     if (url !== lastUrl) {
+      log('URL変更検出: ' + lastUrl + ' -> ' + url);
       lastUrl = url;
       retryCount = 0;
       infoPanel = null;
@@ -417,13 +475,19 @@
       setTimeout(findAndInjectPanel, 1000);
     }
   }).observe(document, { subtree: true, childList: true });
+  log('SPA ナビゲーション監視設定完了');
 
   // Listen for storage changes
+  log('ストレージ変更リスナー設定中...');
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'local' && changes.attendanceData) {
+      log('ストレージ変更検出:', changes.attendanceData);
       cachedData = changes.attendanceData.newValue;
       updateDisplay();
     }
   });
+  log('ストレージ変更リスナー設定完了');
+
+  log('===== Content script 初期化完了 =====');
 
 })();
