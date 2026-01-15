@@ -3,13 +3,21 @@
 
 const TEAMSPIRIT_ATTENDANCE_URL = 'https://teamspirit-74532.lightning.force.com/lightning/n/teamspirit__AtkWorkTimeView';
 
+// ログをContent Scriptに送信してUI表示
+async function sendLogToContent(message, data = null) {
+  try {
+    const tabs = await chrome.tabs.query({ url: ['https://teamspirit-74532.lightning.force.com/*', 'https://*.force.com/*'] });
+    for (const tab of tabs) {
+      chrome.tabs.sendMessage(tab.id, { type: 'DEBUG_LOG', message, data }).catch(() => {});
+    }
+  } catch (e) {}
+}
+
 function log(message, data = null) {
   const timestamp = new Date().toLocaleTimeString();
-  if (data !== null) {
-    console.log(`[TS-Info ${timestamp}] ${message}`, data);
-  } else {
-    console.log(`[TS-Info ${timestamp}] ${message}`);
-  }
+  const text = data !== null ? `${message} ${JSON.stringify(data)}` : message;
+  console.log(`[TS-Info ${timestamp}] ${text}`);
+  sendLogToContent(`[BG] ${message}`, data);
 }
 
 // Get today's date string

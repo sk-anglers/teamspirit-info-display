@@ -4,12 +4,47 @@
 (function() {
   'use strict';
 
+  // デバッグパネル
+  let debugPanel = null;
+  function createDebugPanel() {
+    const panel = document.createElement('div');
+    panel.id = 'ts-debug-panel';
+    panel.style.cssText = `
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      width: 500px;
+      max-height: 80vh;
+      background: #1a1a1a;
+      color: #0f0;
+      font-family: monospace;
+      font-size: 11px;
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 999999;
+      overflow-y: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = '<div style="color:#fff;font-weight:bold;margin-bottom:8px;">🔍 TeamSpirit Info Display - Debug Log</div>';
+    document.body.appendChild(panel);
+    return panel;
+  }
+
   function log(message, data = null) {
     const timestamp = new Date().toLocaleTimeString();
-    if (data !== null) {
-      console.log(`[TS-Info-Content ${timestamp}] ${message}`, data);
-    } else {
-      console.log(`[TS-Info-Content ${timestamp}] ${message}`);
+    const text = data !== null ? `${message} ${JSON.stringify(data)}` : message;
+    console.log(`[TS-Info-Content ${timestamp}] ${text}`);
+
+    // 画面にも表示
+    if (!debugPanel && document.body) {
+      debugPanel = createDebugPanel();
+    }
+    if (debugPanel) {
+      const line = document.createElement('div');
+      line.style.cssText = 'border-bottom: 1px solid #333; padding: 3px 0; word-break: break-all;';
+      line.innerHTML = `<span style="color:#888">${timestamp}</span> ${text}`;
+      debugPanel.appendChild(line);
+      debugPanel.scrollTop = debugPanel.scrollHeight;
     }
   }
 
@@ -487,6 +522,14 @@
     }
   });
   log('ストレージ変更リスナー設定完了');
+
+  // Background scriptからのログを受信
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'DEBUG_LOG') {
+      log(message.message, message.data);
+    }
+  });
+  log('Backgroundログ受信リスナー設定完了');
 
   log('===== Content script 初期化完了 =====');
 
