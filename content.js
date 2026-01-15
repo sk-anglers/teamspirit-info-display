@@ -454,15 +454,30 @@
     log('パネルを作成・挿入中...');
     infoPanel = createInfoPanel();
 
-    // 打刻エリアのすぐ右に固定配置
-    const rect = punchArea.getBoundingClientRect();
-    infoPanel.style.position = 'fixed';
-    infoPanel.style.top = rect.top + 'px';
-    infoPanel.style.left = (rect.right + 15) + 'px';
-    infoPanel.style.zIndex = '1000';
-    document.body.appendChild(infoPanel);
+    // カード内に埋め込む - 打刻エリアの親要素を見つける
+    // punchAreaが.slds-cardの場合、その中のコンテンツエリアに挿入
+    const cardBody = punchArea.querySelector('.slds-card__body') ||
+                     punchArea.querySelector('[class*="body"]') ||
+                     punchArea;
 
-    log('パネル挿入完了 - 位置: left=' + infoPanel.style.left + ', top=' + infoPanel.style.top);
+    // カード内をflex配置にして横並びにする
+    const contentWrapper = document.createElement('div');
+    contentWrapper.style.cssText = 'display: flex; align-items: flex-start; gap: 20px; padding: 10px;';
+
+    // 既存のカード内容を取得
+    const existingContent = document.createElement('div');
+    existingContent.style.cssText = 'flex: 1;';
+
+    // cardBodyの子要素を移動
+    while (cardBody.firstChild) {
+      existingContent.appendChild(cardBody.firstChild);
+    }
+
+    contentWrapper.appendChild(existingContent);
+    contentWrapper.appendChild(infoPanel);
+    cardBody.appendChild(contentWrapper);
+
+    log('パネル挿入完了 - カード内に埋め込み');
 
     // Load and display data
     log('初期データ読み込み開始...');
