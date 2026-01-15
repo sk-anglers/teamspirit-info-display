@@ -454,12 +454,12 @@
     log('パネルを作成・挿入中...');
     infoPanel = createInfoPanel();
 
-    // ラッパーを作成して横並びにする
-    const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display: flex; align-items: flex-start; gap: 20px;';
-    punchArea.parentNode.insertBefore(wrapper, punchArea);
-    wrapper.appendChild(punchArea);
-    wrapper.appendChild(infoPanel);
+    // パネルを固定位置で配置（既存レイアウトを壊さない）
+    infoPanel.style.position = 'fixed';
+    infoPanel.style.top = '120px';
+    infoPanel.style.left = '340px';
+    infoPanel.style.zIndex = '10000';
+    document.body.appendChild(infoPanel);
 
     log('パネル挿入完了');
 
